@@ -13,121 +13,153 @@
 ;You should have received a copy of the GNU General Public License
 ;along with Foobar.  If not, see <https://www.gnu.org/licenses/>.
 
+;Made by Deksor (2020)
+
 .model tiny
 
 .stack 100h
 
 .data
-message db "Hello World $"
 
-X       dw ?
-Y       dw ?
-Couleur db ?
-X2      dw ?
-Y2      dw ?
+;;Pixel plotting variables;;
+X	  					dw ?
+Y	   					dw ?
+color 					db ?
 
-sdx		dw ?
-sdy		dw ?
-dxabs	dw ?
-dyabs	dw ?
+;;Line drawing variables;;
+X2	  					dw ?
+Y2	  					dw ?
 
-posHd   db  "X, Y : $"
+sdx						dw ?
+sdy						dw ?
+dxabs					dw ?
+dyabs					dw ?
 
-;Game variables
+;;Debug strings;;
+posHeader   			db  "X, Y : $"
+coma		  			db ", $"
+retCar		  			db 0dh,"$"
 
-snakeX    dw ?
-snakeY    dw ?
-snakeDir  db ?
-snakeCoul db ?
+;;Game variables and constants;;
 
-SNAKE_MAX_LENGTH equ 100 ; twice the size of the snake
-snakeLength      dw ?   ; twice the size of the snake
-snakeBody        dw SNAKE_MAX_LENGTH DUP(0)
-snakeHeadPtr     dw [snakeBody]
-snakeOldHeadPtr  dw ?
-snakeTailPtr     dw [snakeBody]
+;snake's main attributes
+snakeX					dw ?
+snakeY					dw ?
+snakeColor 				db ?
+snakeDirection 			db ?
 
-leftBorder   dw ?
-rightBorder  dw ?
-topBorder    dw ?
-bottomBorder dw ?
+SNAKE_DIR_RIGHT			equ 0
+SNAKE_DIR_DOWN			equ 1
+SNAKE_DIR_LEFT			equ 2
+SNAKE_DIR_UP			equ 3
 
-lost      db ?
-score     dw ?
-fps       dw ?
-clocksave dw ?
+END_SNAKE_HIT_ITSELF	equ 1
+END_QUIT_GAME			equ 2
+
+;snake's body variables
+SNAKE_MAX_LENGTH 		equ 100	; twice the size of the snake
+snakeLength	  			dw ?	; twice the size of the snake
+snakeBody				dw SNAKE_MAX_LENGTH DUP(0)
+snakeHeadPtr	 		dw [snakeBody]
+snakeOldHeadPtr  		dw ?
+snakeTailPtr	 		dw [snakeBody]
+
+;invisible walls where the snake gets teleported 
+leftBorder   			dw ?
+rightBorder  			dw ?
+topBorder				dw ?
+bottomBorder 			dw ?
+
+;main loop variables
+lost	 				db ?
+score					dw ?
+fps	   					dw ?
+clocksave 				dw ?
+
 ;Number to string buffer
-numbuf  db  5 DUP(0),"$"
+numbuf  				db  5 DUP(0),"$"
 
-;Constants
-VGA_GRAPHIC_MODE equ 0013h
-VGA_ADDRESS      equ 0A000h
-TEXT_MODE        equ 0003h
+;;Video related constants;;
+VGA_GRAPHIC_MODE 		equ 0013h
+VGA_ADDRESS	  			equ 0A000h
+TEXT_MODE				equ 0003h
+VIDEO_INT				equ 10h
 
-fCheckBuffer     equ 01h
-fGetShiftStatus  equ 02h
+SCREEN_WIDTH	 		equ 320
+SCREEN_HEIGHT			equ 200
 
-fExitProgram     equ 4c00h
+;;Keyboard related constants;;
+KEYB_INT				equ 16h
+ESC_KEY                 equ 01
+LEFT_KEY                equ 77
+DOWN_KEY				equ 80
+RIGHT_KEY				equ 75
+UP_KEY					equ 72
 
-fReadClock       equ 00h
+;;OS function constants;;
+fCheckBuffer	 		equ 01h
+fGetShiftStatus  		equ 02h
 
-VIDEO_INT        equ 10h
-KEYB_INT         equ 16h
-CLOCKINT         equ 1ah
-DOS_INT          equ 21h
+fExitProgram	 		equ 4c00h
 
-SCREEN_WIDTH     equ 320
-SCREEN_HEIGHT    equ 200
+fReadClock	   			equ 00h
 
-VIRGULE          db ", $"
-RET_CAR          db 0dh,"$"
+fPrint					equ 09h
+fFlushSTDINBuffer		equ 0ch
 
+
+CLOCKINT				equ 1ah
+DOS_INT		  			equ 21h
 
 
 .code
 
+;;Macros;;
+	;; Turns X (bx) and Y (dx) values into a VGA 13h mode screen offset
 	screenoffset macro
-		shl dx,1
-    	shl dx,1
-    	shl dx,1
-    	shl dx,1
-    	shl dx,1			
-    	shl dx,1			;12
-    	add bx,dx			;3
-    	shl dx,1			
-    	shl dx,1			;4
-    	add bx,dx			;3
+		shl dx, 1
+		shl dx, 1
+		shl dx, 1
+		shl dx, 1
+		shl dx, 1			
+		shl dx, 1
+		add bx, dx
+		shl dx, 1			
+		shl dx, 1
+		add bx, dx
 	endm
 
-    pixel macro
+	;; writes al to the screen memory
+	pixel macro
 		screenoffset
-    
-        mov es:[bx],al      ;9+
-							;=31+
-    endm
+	
+		mov es:[bx], al
 
+	endm
+
+	;; returns the sign of the number stored in ax
 	complementAx macro
-		sar ax,1
-		sar ax,1
-		sar ax,1
-		sar ax,1
-		sar ax,1
-		sar ax,1
-		sar ax,1
-		sar ax,1
-		sar ax,1
-		sar ax,1
-		sar ax,1
-		sar ax,1
-		sar ax,1
-		sar ax,1
-		sar ax,1
+		sar ax, 1
+		sar ax, 1
+		sar ax, 1
+		sar ax, 1
+		sar ax, 1
+		sar ax, 1
+		sar ax, 1
+		sar ax, 1
+		sar ax, 1
+		sar ax, 1
+		sar ax, 1
+		sar ax, 1
+		sar ax, 1
+		sar ax, 1
+		sar ax, 1
 	endm
 	
 	random macro
-		mov ah,fReadClock    ; Retourne le temps dans CX DX
+		mov ah,fReadClock	; Returns the time in CX DX
 		int CLOCKINT
-		mov ax,25173
+		mov ax, 25173
 		mul dx
 		add ax, 13849
 		add al,ah
@@ -136,29 +168,29 @@ RET_CAR          db 0dh,"$"
 
 main proc near
 
-	mov ax,@data
+	mov ax, @data
 	mov ds,ax
-    
-    mov ax,VGA_GRAPHIC_MODE
-    int VIDEO_INT
-    
-    mov ax,VGA_ADDRESS
-    mov es,ax
-                        
+	
+	mov ax, VGA_GRAPHIC_MODE
+	int VIDEO_INT
+	
+	mov ax, VGA_ADDRESS
+	mov es,ax
+						
 initgame:
 
 	mov ax, 0
-    mov score, ax
+	mov score, ax
 	mov ax, 3
-	mov snakeDir, al
+	mov snakeDirection, al
 	mov al, 0
 	mov lost, al
 	mov ax, 160
-    mov snakeX, ax
+	mov snakeX, ax
 	mov ax, 100
-    mov snakeY, ax
+	mov snakeY, ax
 	mov al, 45
-	mov snakeCoul, al
+	mov snakeColor, al
 	
 	mov ax, 0
 	mov leftBorder, ax
@@ -182,12 +214,11 @@ initgame:
 	call setclockspeed
 	
 	call displayhead
-    
-boucle:
-		
 	
+mainloop:
 	
-	mov ah,fReadClock
+	xor ax, ax
+	mov ah, fReadClock
 	int CLOCKINT
 	
 	cmp dx, clocksave
@@ -196,11 +227,12 @@ boucle:
 	mov ax, fps
 	call printnum
 	
-	mov ah,09h
-	mov dx,offset RET_CAR
+	xor ax, ax
+	mov ah, fPrint
+	mov dx, offset retCar
 	int DOS_INT
 	
-	mov dx, 0
+	xor dx, dx
 	mov fps, dx
 	
 	call movesnake
@@ -227,43 +259,46 @@ boucle:
 	mov al, lost
 	cmp al, 0
 	
-	je boucle
+	je mainloop
 	
 gameend:
 
-	mov ax, 0c00h
+	xor ax, ax
+	mov ah, fFlushStdinBuffer
 	int DOS_INT
-    
-    mov ax,TEXT_MODE
-    int VIDEO_INT
-    
-    mov ah,fGetShiftStatus
-    int DOS_INT
 	
-	mov bx, 0
+	mov ax, TEXT_MODE
+	int VIDEO_INT
+	
+	;mov ah, fGetShiftStatus
+	;int DOS_INT
+	
+	xor bx, bx
 	call setclockspeed
 	
-    mov ax,fExitProgram
-    int DOS_INT
-    endp
+	mov ax,fExitProgram
+	int DOS_INT
+	endp
 
-    ret
-	
+	ret
+
+;;Changes snakeDir depending of the keyboard's input and dies if esc is pressed
 keyboard:
-	mov ah, 01h
+	xor ax, ax
+	mov ah, fCheckBuffer
 	int KEYB_INT
 	je noinput
 	
-	cmp ah,01
-	je gameend
+	cmp ah, ESC_KEY
+	je quitgame
 	
-	cmp ah, 77
+	cmp ah, LEFT_KEY
 	je leftkey
-	cmp ah, 80
+	cmp ah, DOWN_KEY
 	je downkey
-	cmp ah, 75
+	cmp ah, RIGHT_KEY
 	je rightkey
-	cmp ah, 72
+	cmp ah, UP_KEY
 	je upkey
 	
 	mov al, ah
@@ -271,48 +306,55 @@ keyboard:
 	
 	call printnum
 	
-	mov ah,09h
-	mov dx,offset RET_CAR
+	xor ax, ax
+	mov ah, fPrint
+	mov dx, offset retCar
 	int DOS_INT
 	
 	clearkeybbuf:
-	mov ax, 0c00h
+	xor ax,ax
+	mov ah, fFlushStdinBuffer
 	int DOS_INT
 	
 	noinput:
 	
 	ret
 	
-leftkey:
-	mov al, 0
-	mov ah, snakedir
-	cmp snakedir, 2
-	je clearkeybbuf
-	mov snakeDir, al
-	jmp clearkeybbuf
+	leftkey:
+		mov al, SNAKE_DIR_RIGHT
+		mov ah, snakeDirection
+		cmp snakeDirection, SNAKE_DIR_LEFT
+		je clearkeybbuf
+		mov snakeDirection, al
+		jmp clearkeybbuf
 
-downkey:
-	mov al, 1
-	mov ah, snakedir
-	cmp snakedir, 3
-	je clearkeybbuf
-	mov snakeDir, al
-	jmp clearkeybbuf
-rightkey:
-	mov al, 2
-	mov ah, snakedir
-	cmp snakedir, 0
-	je clearkeybbuf
-	mov snakeDir, al
-	jmp clearkeybbuf
-upkey:
-	mov al, 3
-	mov ah, snakedir
-	cmp snakedir, 1
-	je clearkeybbuf
-	mov snakeDir, al
-	jmp clearkeybbuf
-	
+	downkey:
+		mov al, SNAKE_DIR_DOWN
+		mov ah, snakeDirection
+		cmp snakeDirection, SNAKE_DIR_UP
+		je clearkeybbuf
+		mov snakeDirection, al
+		jmp clearkeybbuf
+	rightkey:
+		mov al, SNAKE_DIR_LEFT
+		mov ah, snakeDirection
+		cmp snakeDirection, SNAKE_DIR_RIGHT
+		je clearkeybbuf
+		mov snakeDirection, al
+		jmp clearkeybbuf
+	upkey:
+		mov al, SNAKE_DIR_UP
+		mov ah, snakeDirection
+		cmp snakeDirection, SNAKE_DIR_DOWN
+		je clearkeybbuf
+		mov snakeDirection, al
+		jmp clearkeybbuf
+	quitgame:
+		mov al, END_QUIT_GAME
+		mov lost, al
+		jmp clearkeybbuf
+
+;;Checks if the head is touching any bodypart
 collisioncheck:
 	mov bx, snakeX
 	mov dx, snakeY
@@ -334,28 +376,27 @@ collisioncheck:
 	loop checksnake
 	
 	ret
-	
+;;Checks if the head is touching any bodypart faster	
 collisioncheckfast:
 	mov bx, snakeX
 	mov dx, snakeY
 	
 	screenoffset
 	
-	;mov si, bx
 	mov al, es:[bx]
-	cmp al, snakeCoul
+	cmp al, snakeColor
 	je collision
 	
 	ret
-	
+;;End game
 collision:
-	mov al, 1
+	mov al, END_SNAKE_HIT_ITSELF
 	mov lost, al
 	
 	ret
 
 setclockspeed:
-    xor dx, dx
+	xor dx, dx
 	mov al, 34h
 	mov al, 43h
 	out dx, al
@@ -367,79 +408,79 @@ setclockspeed:
 	out dx, al
 	
 	ret
-                         
-putpixel:            
-    mov al,Couleur      ;8+
-    mov bx,X            ;8+
-	mov dx,Y			;8+
-	
-	pixel               ;31+
-    
-    ret                 ;8
-                        
-ligne:
-	;Calcul des variables X
-    mov ax,X2
-	sub ax,X			;ax = deltax
-	mov bx,ax			;bx = deltax
-	
-	complementAx		;ax= ""signedeltax""
-	
-	xor bx,ax			
-	sub bx,ax			;bx=abs deltax
-	cmp ax,0
-	jl negx
-	inc ax      		;ax=sgn deltax
-	negx:
-	mov sdx,ax
-	mov dxabs,bx      
-	
-	;Calcul des variables Y
-	mov ax,Y2
-	sub ax,Y
-	mov bx,ax
-	
-	complementAx
-	
-	xor bx,ax
-	sub bx,ax
-	cmp ax,0
-	jl negy
-	inc ax
-	negy:
-	mov sdy,ax
-	mov dyabs,bx
-	
-	mov al,Couleur
-	mov bx,X
-	mov dx,Y
+						 
+putpixel:			
+	mov al, color
+	mov bx, X
+	mov dx, Y
 	
 	pixel
 	
-	mov ax,dxabs
-	mov bx,dyabs
-	cmp ax,bx
+	ret
+						
+ligne:
+	;Calcul des variables X
+	mov ax, X2
+	sub ax, X			;ax = deltax
+	mov bx, ax			;bx = deltax
+	
+	complementAx		;ax= ""signedeltax""
+	
+	xor bx, ax			
+	sub bx, ax			;bx=abs deltax
+	cmp ax, 0
+	jl negx
+	inc ax	  		;ax=sgn deltax
+	negx:
+	mov sdx, ax
+	mov dxabs, bx	  
+	
+	;Calcul des variables Y
+	mov ax, Y2
+	sub ax, Y
+	mov bx, ax
+	
+	complementAx
+	
+	xor bx, ax
+	sub bx, ax
+	cmp ax, 0
+	jl negy
+	inc ax
+	negy:
+	mov sdy, ax
+	mov dyabs, bx
+	
+	mov al, color
+	mov bx, X
+	mov dx, Y
+	
+	pixel
+	
+	mov ax, dxabs
+	mov bx, dyabs
+	cmp ax, bx
 	jb vertical
-		mov cx,ax	; boucle
-		mov dx,ax 	
-		shr dx,1	;dx=y
+		mov cx, ax	; boucle
+		mov dx, ax 	
+		shr dx, 1	;dx=y
 		loophoriz:
-		    add dx,bx
-		    push bx
-			cmp dx,ax
+			add dx, bx
+			push bx
+			cmp dx, ax
 			jb pasModifY
-				sub dx,ax
+				sub dx, ax
 				;mov dxabs,ax
-				mov bx,sdy
-				add Y,bx
+				mov bx, sdy
+				add Y, bx
 			pasModifY:
-			mov bx,X
-			add bx,sdx
-			mov X,bx
+			mov bx, X
+			add bx, sdx
+			mov X, bx
 			push dx
-			mov dx,Y
+			mov dx, Y
 			push ax
-			mov al,Couleur
+			mov al, color
 			
 			pixel
 			
@@ -452,26 +493,26 @@ ligne:
 	ret
 	
 	vertical:
-	    mov cx,bx	; boucle
-		mov dx,bx 	;bx=dyabs
-		shr dx,1	;dx="x"
+		mov cx, bx	; boucle
+		mov dx, bx 	;bx=dyabs
+		shr dx, 1	;dx="x"
 		loopverti:
-		    add dx,ax
-		    push ax
-			cmp dx,bx
+			add dx, ax
+			push ax
+			cmp dx, bx
 			jb pasModifX
-				sub dx,bx
+				sub dx, bx
 				;mov dxabs,ax
-				mov ax,sdx
-				add X,ax
+				mov ax, sdx
+				add X, ax
 			pasModifX:
 			push dx
-			mov dx,Y
-			add dx,sdy
-			mov Y,dx
+			mov dx, Y
+			add dx, sdy
+			mov Y, dx
 			push bx
-			mov bx,X
-			mov al,Couleur
+			mov bx, X
+			mov al, color
 			
 			pixel
 			
@@ -483,14 +524,18 @@ ligne:
 		
 	ret
 	
-displayhead:           
-    mov al, snakeCoul      ;8+
-    mov bx, snakeX         ;8+
-	mov dx, snakeY	       ;8+
+
+;;Displays the snake's head to the screen
+displayhead:		   
+	mov al, snakeColor
+	mov bx, snakeX
+	mov dx, snakeY
 	
-	pixel                  ;31+ bx contains the head's pointer to the screen
+	pixel				  	
 	
-	mov di, snakeHeadPtr   ;saves the head's pointer to the screen to the body array
+	;bx now contains the head's pointer to the screen
+	
+	mov di, snakeHeadPtr	;saves the head's pointer to the screen to the body array
 	mov snakeOldHeadPtr, di
 	mov [di], bx
 	inc di
@@ -500,191 +545,195 @@ displayhead:
 	cmp bx, SNAKE_MAX_LENGTH
 	jg loopheadpointer
 	mov snakeHeadPtr, di
-    
-    ret 
-loopheadpointer:
-    mov bx, offset snakeBody
-	mov snakeHeadPtr, bx
-	ret
 	
+	ret
+	loopheadpointer:
+		mov bx, offset snakeBody
+		mov snakeHeadPtr, bx
+		ret
+
+;;Removes the snake's oldest body part
 tailhandler:
-    mov ax, snakeTailPtr      ;Snake bigger than the absolute limit
+	mov ax, snakeTailPtr		;Snake bigger than the absolute limit
 	cmp ax, snakeHeadPtr
 	je removetail
-	add ax, snakeLength       ;Snake bigger than its own set size
+	add ax, snakeLength			;Snake bigger than its own set size
 	mov bx, offset snakeBody
 	add bx, SNAKE_MAX_LENGTH
 	cmp ax, bx
 	jge removetail
-tailhandlerlabel:
+	tailhandlerlabel:
 	cmp ax, snakeHeadPtr
 	je removetail
-    ret
+	ret
 	
 	removetail:
 		mov bx, snakeTailPtr
 		mov di, [bx]
-        mov byte ptr es:[di],00h      ;9+
+		mov byte ptr es:[di], 00h
 		mov di, bx
 		inc di
 		inc di
-	    mov bx, di
-	    sub bx, offset snakeBody
-	    cmp bx, SNAKE_MAX_LENGTH
-	    jg looptailpointer
-	    mov snakeTailPtr, di
+		mov bx, di
+		sub bx, offset snakeBody
+		cmp bx, SNAKE_MAX_LENGTH
+		jg looptailpointer
+		mov snakeTailPtr, di
 		ret
 	looptailpointer:
 		mov bx, offset snakeBody
 		mov snakeTailPtr, bx
 		ret
 	looptailtemp:
-	    sub ax, SNAKE_MAX_LENGTH
+		sub ax, SNAKE_MAX_LENGTH
 		jmp tailhandlerlabel
-	
+
+;; Moves the snake in the direction determined by snakeDirection
 movesnake:
-    mov al, snakeDir
-	mov ah, 0
+	mov al, snakeDirection
+	mov ah, SNAKE_DIR_RIGHT
 	cmp al, ah
 	je snakeright
-	mov ah, 1
+	mov ah, SNAKE_DIR_DOWN
 	cmp al, ah
 	je snakedown
-	mov ah, 2
+	mov ah, SNAKE_DIR_LEFT
 	cmp al, ah
 	je snakeleft
-	mov ah, 3
+	mov ah, SNAKE_DIR_UP
 	cmp al, ah
 	je snakeup
 	
-snakeright:
-	mov bx, snakeX
-	inc bx
-	cmp bx, rightBorder
-	jge overright
-	mov snakeX, bx
-	jmp moveend
-	overright:
-	    sub bx, rightBorder
-		add bx, leftBorder
+	snakeright:
+		mov bx, snakeX
+		inc bx
+		cmp bx, rightBorder
+		jge overright
 		mov snakeX, bx
-    jmp moveend
+		ret
+		overright:
+			sub bx, rightBorder
+			add bx, leftBorder
+			mov snakeX, bx
+		ret
 
-snakedown:
-    mov bx, snakeY
-	inc bx
-	cmp bx, bottomBorder
-	jge overdown
-	mov snakeY, bx
-	jmp moveend
-	overdown:
-	    sub bx, bottomBorder
-		add bx, topBorder
+	snakedown:
+		mov bx, snakeY
+		inc bx
+		cmp bx, bottomBorder
+		jge overdown
 		mov snakeY, bx
-    jmp moveend
-	
-snakeleft:
-	mov bx, snakeX
-	dec bx
-	mov dx, leftBorder
-	dec dx
-	cmp bx, dx
-	jle overleft
-	mov snakeX, bx
-	jmp moveend
-	overleft:
-	    add bx, rightBorder
-		sub bx, leftBorder
+		ret
+		overdown:
+			sub bx, bottomBorder
+			add bx, topBorder
+			mov snakeY, bx
+		ret
+		
+	snakeleft:
+		mov bx, snakeX
+		dec bx
+		mov dx, leftBorder
+		dec dx
+		cmp bx, dx
+		jle overleft
 		mov snakeX, bx
-    jmp moveend
+		ret
+		overleft:
+			add bx, rightBorder
+			sub bx, leftBorder
+			mov snakeX, bx
+		ret
 	
-snakeup:
-	mov bx, snakeY
-	dec bx
-	mov dx, topBorder
-	dec dx
-	cmp bx, dx
-	jle overup
-	mov snakeY, bx
-	jmp moveend
-	overup:
-	    add bx, bottomBorder
-		sub bx, topBorder
+	snakeup:
+		mov bx, snakeY
+		dec bx
+		mov dx, topBorder
+		dec dx
+		cmp bx, dx
+		jle overup
 		mov snakeY, bx
-    jmp moveend
+		ret
+		overup:
+			add bx, bottomBorder
+			sub bx, topBorder
+			mov snakeY, bx
+		ret
 
-moveend:
-	;Will be used for collision checking
-    ret
-	
+;; Prints AX' content to the screen
 printnum:
-    ;initilize count 
-    mov cx,0 
-    mov dx,0
-	lea di,numbuf+5
-	cmp ax,0
+	;initialize count 
+	mov cx, 0 
+	mov dx, 0
+	lea di, numbuf+5
+	cmp ax, 0
 	je numzero
 	
-    numtochar: 
-        ; if ax is zero 
-        cmp ax,0 
-        je print1       
-          
-        ;initilize bx to 10 
-        mov bx,10         
-          
-        ; extract the last digit 
-        div bx                   
-          
-        ; adds it at the tail of the string
-		add dx,30h
+	numtochar: 
+		; if ax is zero 
+		cmp ax, 0 
+		je print1	   
+		  
+		;initilize bx to 10 
+		mov bx, 10		 
+		  
+		; extract the last digit 
+		div bx				   
+		  
+		; adds it at the tail of the string
+		add dx, 30h
 		dec di
-		mov [di],dl           
-          
-        ;increment the count 
-        inc cx               
-          
-        ;set dx to 0  
-        xor dx,dx 
-        jmp numtochar 
-    print1: 
-        ;check if count  
-        ;is greater than zero 
-        cmp cx,0 
-        je exit
+		mov [di], dl		   
+		  
+		;increment the count 
+		inc cx			   
+		  
+		;set dx to 0  
+		xor dx, dx 
+		jmp numtochar 
+	print1: 
+		;check if count  
+		;is greater than zero 
+		cmp cx, 0 
+		je exit
 		;print the string
-		mov ah,09h
+		xor ax, ax
+		mov ah, fPrint
 		mov dx,di
 		int DOS_INT
 		
-    exit: 
-        ret
+	exit: 
+		ret
 	numzero:
-		add ax,30h
+		add ax, 30h
 		dec di
-	    mov [di],al
+		mov [di], al
 		inc cx
 		jmp print1
-		
+
+;; Prints X and Y to the screen	
 printpos:
-    mov ax,0900h
-	mov dx, offset posHd
+	xor ax, ax
+	mov ah, fPrint
+	mov dx, offset posHeader
 	int DOS_INT
 	
-	mov ax,snakeX
+	mov ax, snakeX
 	
 	call printnum
 	
-	mov ax,0900h
-	mov dx, offset VIRGULE
+	xor ax, ax
+	mov ah, fPrint
+	mov dx, offset coma
 	int DOS_INT
 	
-	mov ax,snakeY
+	mov ax, snakeY
 	
 	call printnum
 	
-	mov ax,0900h
-	mov dx, offset RET_CAR
+	xor ax, ax
+	mov ah, fPrint
+	mov dx, offset retCar
 	int DOS_INT
 	
 	ret
