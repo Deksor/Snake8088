@@ -64,6 +64,9 @@ snakeHeadPtr	 		dw [snakeBody]
 snakeOldHeadPtr  		dw ?
 snakeTailPtr	 		dw [snakeBody]
 
+;food variables
+foodColor				db ?
+
 ;invisible walls where the snake gets teleported 
 leftBorder   			dw ?
 rightBorder  			dw ?
@@ -162,8 +165,6 @@ DOS_INT		  			equ 21h
 		mov ax, 25173
 		mul dx
 		add ax, 13849
-		add al,ah
-		xor ah,ah
 	endm
 
 main proc near
@@ -200,13 +201,16 @@ initgame:
 	mov rightBorder, ax
 	mov ax, SCREEN_HEIGHT
 	mov bottomBorder, ax
-	mov ax, 98
+	mov ax, 20
 	mov snakeLength, ax
 	
 	mov ax, 0
 	mov fps, ax
 	mov ax, 0
 	mov clocksave, 0
+
+	mov ax, 39
+	mov foodColor, al
 	
 	;19886 = 60hz
 	
@@ -225,7 +229,8 @@ mainloop:
 	je samesecond
 	mov clocksave,dx
 	mov ax, fps
-	call printnum
+
+	;call printnum
 	
 	xor ax, ax
 	mov ah, fPrint
@@ -244,6 +249,20 @@ mainloop:
 	call tailhandler
 	
 	call keyboard
+
+	random
+
+	mov bx, 100
+	cmp bx, ax
+	jbe nofood
+
+	mov al, foodColor
+	mov bx, 50
+	mov dx, 60
+
+	pixel
+
+	nofood:
 	
 	
 	samesecond:
@@ -304,7 +323,7 @@ keyboard:
 	mov al, ah
 	xor ah, ah
 	
-	call printnum
+	;call printnum
 	
 	xor ax, ax
 	mov ah, fPrint
@@ -386,6 +405,8 @@ collisioncheckfast:
 	mov al, es:[bx]
 	cmp al, snakeColor
 	je collision
+	cmp al, foodColor
+	je grow
 	
 	ret
 ;;End game
@@ -393,6 +414,19 @@ collision:
 	mov al, END_SNAKE_HIT_ITSELF
 	mov lost, al
 	
+	ret
+
+grow:
+	mov ax, snakeLength
+	cmp ax, SNAKE_MAX_LENGTH
+	jge toobig
+	inc ax
+	inc ax
+	mov snakeLength, ax
+
+	call printnum
+
+	toobig:
 	ret
 
 setclockspeed:
