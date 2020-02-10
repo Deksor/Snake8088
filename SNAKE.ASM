@@ -39,7 +39,7 @@ dyabs					dw ?
 posHeader   			db "X, Y : $"
 coma		  			db ", $"
 retCar		  			db 0dh,"$"
-endMessage				db "Deksor's 8088snake alpha 0.1 (2020-02-10)", 0ah, 0dh, "$"
+endMessage				db "Deksor's 8088snake alpha 0.1b (2020-02-11)", 0ah, 0dh, "$"
 
 ;;Game variables and constants;;
 
