@@ -24,7 +24,7 @@
 ;;Pixel plotting variables;;
 X	  					dw ?
 Y	   					dw ?
-color 					db ?
+color 					dw ?
 
 ;;Line drawing variables;;
 X2	  					dw ?
@@ -46,7 +46,7 @@ endMessage				db "Deksor's 8088snake alpha 0.1 (2020-02-10)", 0ah, 0dh, "$"
 ;snake's main attributes
 snakeX					dw ?
 snakeY					dw ?
-snakeColor 				db ?
+snakeColor 				dw ?
 snakeDirection 			db ?
 
 SNAKE_DIR_RIGHT			equ 0
@@ -66,7 +66,7 @@ snakeOldHeadPtr  		dw ?
 snakeTailPtr	 		dw [snakeBody]
 
 ;food variables
-foodColor				db ?
+foodColor				dw ?
 generateFoodNextTime	db ?
 nextFoodCounter			dw ?
 NEXT_FOOD_MAX_MASK		equ 01FFh
@@ -130,7 +130,7 @@ fPrint					equ 09h
 fFlushSTDINBuffer		equ 0ch
 
 ;;Clock related constants;;
-CLOCK_DIVIDER			equ 4daeh
+CLOCK_DIVIDER			equ 7fffh;9b5ch;4daeh
 CLOCKINT				equ 1ah
 DOS_INT		  			equ 21h
 
@@ -139,7 +139,7 @@ DOS_INT		  			equ 21h
 
 ;;Macros;;
 	;; Turns X (bx) and Y (dx) values into a VGA 13h mode screen offset
-	screenoffset macro
+	vgaoffset macro
 		shl dx, 1
 		shl dx, 1
 		shl dx, 1
@@ -152,11 +152,35 @@ DOS_INT		  			equ 21h
 		add bx, dx
 	endm
 
+	cgaoffset macro
+		xor di, di
+		shr dx, 1
+		sbb di, 0
+		and di, 2000h
+		shl dx, 1
+		shl dx, 1
+		shl dx, 1
+		shl dx, 1
+		add di, dx
+		shl dx, 1
+		shl dx, 1
+		add di, dx
+		shl di, 1
+		shl di, 1
+
+		add bx, di
+
+	endm
+
 	;; writes al to the screen memory
 	vgapixel macro
-		screenoffset
+		vgaoffset
 	
 		mov es:[bx], al
+
+	endm
+
+	plantronicspixel macro
 
 	endm
 
@@ -192,16 +216,40 @@ main proc near
 	mov ax, @data
 	mov ds,ax
 
-	mov ax, VGA_MODE
+	mov al, VGA_MODE
 	mov videoMode, al
 
 	call initvideo
 	jmp initgame
 
 initvideo:
-		xor ax, ax
+		mov al, VGA_MODE
 		cmp videoMode, al
 		je initvga
+		mov al, PLANTRONICS_MODE
+		cmp videoMode, al
+		je initplantronics
+
+	initplantronics:
+		call initcga
+
+		mov dx, PLANTRONICS_PORT
+    	mov al, PLANTRONICS_16_COLORS
+    	out dx, al
+
+		xor ax, ax
+        mov cx, 8192
+        mov di, CGA_2ND_PAGE_OFFSET
+        rep stosw
+
+		mov ax, 0000000100000001b
+		mov snakeColor, ax
+
+		mov ax, 0000000100000010b
+		mov foodColor, ax
+
+		ret
+
 
 	initcga:
 
@@ -219,6 +267,15 @@ initvideo:
 		
 		mov ax, VGA_ADDRESS
 		mov es, ax
+
+		mov al, 45
+		mov ah, al
+		mov snakeColor, ax
+
+		mov al, 39
+		mov ah, al
+		mov foodColor, ax
+
 		ret
 						
 initgame:
@@ -233,8 +290,6 @@ initgame:
 	mov snakeX, ax
 	mov ax, 100
 	mov snakeY, ax
-	mov al, 45
-	mov snakeColor, al
 	
 	mov ax, 0
 	mov leftBorder, ax
@@ -257,8 +312,7 @@ initgame:
 	mov ax, 0
 	mov nextFoodCounter, ax
 
-	mov ax, 39
-	mov foodColor, al
+	
 	
 	;19886 = 60hz
 	
@@ -417,7 +471,7 @@ collisioncheck:
 	mov bx, snakeX
 	mov dx, snakeY
 	
-	screenoffset
+	vgaoffset
 	
 	mov cx, SNAKE_MAX_LENGTH
 	mov si, offset snakeBody
@@ -442,10 +496,10 @@ collisioncheckfast:
 	mov Y, ax
 
 	call readpixel
-	
-	cmp al, snakeColor
+
+	cmp ax, snakeColor
 	je collision
-	cmp al, foodColor
+	cmp ax, foodColor
 	je grow
 	
 	ret
@@ -483,17 +537,67 @@ setclockspeed:
 	
 	ret
 						 
-putpixel:			
+putpixel:
+
 	mov bx, X
 	mov dx, Y
+
+	mov al, videoMode
+	cmp al, VGA_MODE
+	je vgapix
+	cmp al, PLANTRONICS_MODE
+	je plantronicspix
+
+	plantronicspix:
+
+	cgaoffset
+	mov di, bx
+
+	jmp putpixeloffset
+
+	vgapix:
 	
-	screenoffset
-	mov bx, di
+	vgaoffset
+	mov di, bx
 	
 	jmp putpixeloffset
 
 putpixeloffset:
-	mov al, color
+
+	mov al, videoMode
+	cmp al, VGA_MODE
+	je vgaputpixoffset
+	cmp al, PLANTRONICS_MODE
+	je plantronicsputpixoffset
+
+	plantronicsputpixoffset:
+	mov cl, bl
+	shr di, 1
+	shr di, 1
+	inc cl
+	and cl, 3
+	shl cl, 1
+	mov ax, color
+	ror al, cl
+	mov ch, 0fch
+	ror ch, cl
+	and ch, es:[di]
+	or al, ch
+	stosb
+	dec di
+	mov al, ah
+	ror al, cl
+	mov ch, 0fch
+	ror ch, cl
+	add di, CGA_2ND_PAGE_OFFSET
+	and ch, es:[di]
+	or al, ch
+	stosb
+
+	ret
+
+	vgaputpixoffset:
+	mov ax, color 
 
 	mov es:[di], al
 
@@ -503,14 +607,60 @@ readpixel:
 	mov bx, X
 	mov dx, Y
 
-	screenoffset
+	mov al, videoMode
+	cmp al, VGA_MODE
+	je vgareadpix
+	cmp al, PLANTRONICS_MODE
+	je plantronicsreadpix
+	
+
+	plantronicsreadpix:
+
+	cgaoffset
+
+	mov di, bx
+
+	jmp readpixeloffset	
+
+	vgareadpix:
+
+	vgaoffset
 
 	mov di, bx
 
 	jmp readpixeloffset	
 
 readpixeloffset:
+
+	mov al, videoMode
+	cmp al, VGA_MODE
+	je vgareadpixoffset
+	cmp al, PLANTRONICS_MODE
+	je plantronicsreadpixoffset
+
+	plantronicsreadpixoffset:
+
+	mov cl, bl
+	shr di, 1
+	shr di, 1
+	inc cl
+	and cl, 3
+	shl cl, 1
+	mov al, 3
+	ror al, cl
+	and al, es:[di]
+	rol al, cl
+	mov ah, 3
+	ror ah, cl
+	add di, CGA_2ND_PAGE_OFFSET
+	and ah, es:[di]
+	rol ah, cl
+
+	ret
+
+	vgareadpixoffset:
 	mov al, es:[di]
+	mov ah, al
 
 	ret
 						
@@ -547,7 +697,7 @@ ligne:
 	mov sdy, ax
 	mov dyabs, bx
 	
-	mov al, color
+	mov ax, color
 	mov bx, X
 	mov dx, Y
 	
@@ -576,7 +726,7 @@ ligne:
 			push dx
 			mov dx, Y
 			push ax
-			mov al, color
+			mov ax, color
 			
 			vgapixel
 			
@@ -608,7 +758,7 @@ ligne:
 			mov Y, dx
 			push bx
 			mov bx, X
-			mov al, color
+			mov ax, color
 			
 			vgapixel
 			
@@ -622,20 +772,22 @@ ligne:
 	
 
 ;;Displays the snake's head to the screen
-displayhead:		   
-	mov al, snakeColor
-	mov bx, snakeX
-	mov dx, snakeY
+displayhead:
+	mov ax, snakeColor
+	mov color, ax
+	mov ax, snakeX
+	mov X, ax
+	mov ax, snakeY
+	mov Y, ax		   
 	
-	vgapixel				  	
+	call putpixel				  	
 	
 	;bx now contains the head's pointer to the screen
 	
 	mov di, snakeHeadPtr	;saves the head's pointer to the screen to the body array
 	mov snakeOldHeadPtr, di
 	mov [di], bx
-	inc di
-	inc di
+	add di, 2
 	mov bx, di
 	sub bx, offset snakeBody
 	cmp bx, SNAKE_MAX_LENGTH
@@ -666,12 +818,13 @@ tailhandler:
 	removetail:
 		mov bx, snakeTailPtr
 		mov di, [bx]
+		mov bx, [bx]
 
-		xor al, al
-		mov Color, al
+		xor ax, ax
+		mov color, ax
 
 		call putpixeloffset
-
+		mov bx, snakeTailPtr
 		add bx, 2
 		mov ax, bx
 		sub bx, offset snakeBody
@@ -860,20 +1013,21 @@ foodmaker:
 
 	call readpixeloffset
 
-	cmp al, snakeColor
+	xor ah, ah
+	cmp ax, snakeColor
 	jne notsnake
 	inc bx
 	jmp checkoverlimit
 
 	notsnake:
-	cmp al, foodColor
+	cmp ax, foodColor
 	jne notfood
 	inc bx
 	jmp checkoverlimit
 	notfood:
 	
-	mov al, foodColor
-	mov Color, al
+	mov ax, foodColor
+	mov Color, ax
 
 	call putpixeloffset
 
