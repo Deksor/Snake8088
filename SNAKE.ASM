@@ -115,7 +115,8 @@ fReadClock	   			equ 00h
 fPrint					equ 09h
 fFlushSTDINBuffer		equ 0ch
 
-
+;;Clock related constants;;
+CLOCK_DIVIDER			equ 4daeh
 CLOCKINT				equ 1ah
 DOS_INT		  			equ 21h
 
@@ -224,7 +225,7 @@ initgame:
 	
 	;19886 = 60hz
 	
-	mov bx, 4daeh
+	mov bx, CLOCK_DIVIDER
 	call setclockspeed
 	
 	call displayhead
