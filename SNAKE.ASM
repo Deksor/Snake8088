@@ -86,10 +86,24 @@ clocksave 				dw ?
 ;Number to string buffer
 numbuf  				db  5 DUP(0),"$"
 
-;;Video related constants;;
+;;Video related variables;;
+videoMode				db ?
+VGA_MODE				equ 0
+PLANTRONICS_MODE		equ 1
+
 VGA_GRAPHIC_MODE 		equ 0013h
 VGA_ADDRESS	  			equ 0A000h
 VGA_PIXEL_COUNT			equ 64000
+
+CGA_GRAPHIC_MODE        equ 0004h
+CGA_ADDRESS	  			equ 0B800h
+CGA_2ND_ADDRESS	  		equ 0BC00h
+CGA_2ND_PAGE_OFFSET		equ 04000h
+
+PLANTRONICS_PORT        equ 03DDh
+PLANTRONICS_16_COLORS   equ 10h
+PLANTRONICS_CGA_MASK    equ 40h
+
 TEXT_MODE				equ 0003h
 VIDEO_INT				equ 10h
 
@@ -139,7 +153,7 @@ DOS_INT		  			equ 21h
 	endm
 
 	;; writes al to the screen memory
-	pixel macro
+	vgapixel macro
 		screenoffset
 	
 		mov es:[bx], al
@@ -177,12 +191,35 @@ main proc near
 
 	mov ax, @data
 	mov ds,ax
-	
-	mov ax, VGA_GRAPHIC_MODE
-	int VIDEO_INT
-	
-	mov ax, VGA_ADDRESS
-	mov es,ax
+
+	mov ax, VGA_MODE
+	mov videoMode, al
+
+	call initvideo
+	jmp initgame
+
+initvideo:
+		xor ax, ax
+		cmp videoMode, al
+		je initvga
+
+	initcga:
+
+		mov ax, CGA_GRAPHIC_MODE
+		int VIDEO_INT
+
+		mov ax, CGA_ADDRESS
+		mov es, ax
+		ret
+
+	initvga:
+		
+		mov ax, VGA_GRAPHIC_MODE
+		int VIDEO_INT
+		
+		mov ax, VGA_ADDRESS
+		mov es, ax
+		ret
 						
 initgame:
 
@@ -399,12 +436,13 @@ collisioncheck:
 	ret
 ;;Checks if the head is touching any bodypart faster	
 collisioncheckfast:
-	mov bx, snakeX
-	mov dx, snakeY
+	mov ax, snakeX
+	mov X, ax
+	mov ax, snakeY
+	mov Y, ax
+
+	call readpixel
 	
-	screenoffset
-	
-	mov al, es:[bx]
 	cmp al, snakeColor
 	je collision
 	cmp al, foodColor
@@ -446,12 +484,34 @@ setclockspeed:
 	ret
 						 
 putpixel:			
-	mov al, color
 	mov bx, X
 	mov dx, Y
 	
-	pixel
+	screenoffset
+	mov bx, di
 	
+	jmp putpixeloffset
+
+putpixeloffset:
+	mov al, color
+
+	mov es:[di], al
+
+	ret
+
+readpixel:
+	mov bx, X
+	mov dx, Y
+
+	screenoffset
+
+	mov di, bx
+
+	jmp readpixeloffset	
+
+readpixeloffset:
+	mov al, es:[di]
+
 	ret
 						
 ligne:
@@ -491,7 +551,7 @@ ligne:
 	mov bx, X
 	mov dx, Y
 	
-	pixel
+	vgapixel
 	
 	mov ax, dxabs
 	mov bx, dyabs
@@ -518,7 +578,7 @@ ligne:
 			push ax
 			mov al, color
 			
-			pixel
+			vgapixel
 			
 			pop ax
 			pop dx
@@ -550,7 +610,7 @@ ligne:
 			mov bx, X
 			mov al, color
 			
-			pixel
+			vgapixel
 			
 			pop bx
 			pop dx
@@ -567,7 +627,7 @@ displayhead:
 	mov bx, snakeX
 	mov dx, snakeY
 	
-	pixel				  	
+	vgapixel				  	
 	
 	;bx now contains the head's pointer to the screen
 	
@@ -606,16 +666,20 @@ tailhandler:
 	removetail:
 		mov bx, snakeTailPtr
 		mov di, [bx]
-		mov byte ptr es:[di], 00h
-		mov di, bx
-		inc di
-		inc di
-		mov bx, di
+
+		xor al, al
+		mov Color, al
+
+		call putpixeloffset
+
+		add bx, 2
+		mov ax, bx
 		sub bx, offset snakeBody
 		cmp bx, SNAKE_MAX_LENGTH
 		jg looptailpointer
-		mov snakeTailPtr, di
+		mov snakeTailPtr, ax
 		ret
+
 	looptailpointer:
 		mov bx, offset snakeBody
 		mov snakeTailPtr, bx
@@ -792,27 +856,29 @@ foodmaker:
 	nooverlimit:
 
 	mov di, ax
+	mov bx, ax
 
-	mov bl, es:[di]
+	call readpixeloffset
 
-	cmp bl, snakeColor
+	cmp al, snakeColor
 	jne notsnake
-	inc ax
+	inc bx
 	jmp checkoverlimit
 
 	notsnake:
-	cmp bl, foodColor
+	cmp al, foodColor
 	jne notfood
-	inc ax
+	inc bx
 	jmp checkoverlimit
 	notfood:
+	
+	mov al, foodColor
+	mov Color, al
 
-	mov bl, foodColor
+	call putpixeloffset
 
-	mov es:[di], bl
-
-	and ax, NEXT_FOOD_MAX_MASK
-	mov nextFoodCounter, ax
+	and bx, NEXT_FOOD_MAX_MASK
+	mov nextFoodCounter, bx
 
 	nofood:
 	ret
