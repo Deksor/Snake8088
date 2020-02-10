@@ -35,10 +35,11 @@ sdy						dw ?
 dxabs					dw ?
 dyabs					dw ?
 
-;;Debug strings;;
-posHeader   			db  "X, Y : $"
+;;Strings;;
+posHeader   			db "X, Y : $"
 coma		  			db ", $"
 retCar		  			db 0dh,"$"
+endMessage				db "Deksor's 8088snake alpha 0.1 (2020-02-10)", 0ah, 0dh, "$"
 
 ;;Game variables and constants;;
 
@@ -66,6 +67,9 @@ snakeTailPtr	 		dw [snakeBody]
 
 ;food variables
 foodColor				db ?
+generateFoodNextTime	db ?
+nextFoodCounter			dw ?
+NEXT_FOOD_MAX_MASK		equ 01FFh
 
 ;invisible walls where the snake gets teleported 
 leftBorder   			dw ?
@@ -85,6 +89,7 @@ numbuf  				db  5 DUP(0),"$"
 ;;Video related constants;;
 VGA_GRAPHIC_MODE 		equ 0013h
 VGA_ADDRESS	  			equ 0A000h
+VGA_PIXEL_COUNT			equ 64000
 TEXT_MODE				equ 0003h
 VIDEO_INT				equ 10h
 
@@ -208,6 +213,11 @@ initgame:
 	mov fps, ax
 	mov ax, 0
 	mov clocksave, 0
+	mov al, 0
+	mov generateFoodNextTime, al
+
+	mov ax, 0
+	mov nextFoodCounter, ax
 
 	mov ax, 39
 	mov foodColor, al
@@ -250,20 +260,7 @@ mainloop:
 	
 	call keyboard
 
-	random
-
-	mov bx, 100
-	cmp bx, ax
-	jbe nofood
-
-	mov al, foodColor
-	mov bx, 50
-	mov dx, 60
-
-	pixel
-
-	nofood:
-	
+	call foodmaker
 	
 	samesecond:
 	
@@ -291,6 +288,10 @@ gameend:
 	
 	;mov ah, fGetShiftStatus
 	;int DOS_INT
+	xor ax, ax
+	mov ah, fPrint
+	mov dx, offset endMessage
+	int DOS_INT
 	
 	xor bx, bx
 	call setclockspeed
@@ -424,7 +425,7 @@ grow:
 	inc ax
 	mov snakeLength, ax
 
-	call printnum
+	;call printnum
 
 	toobig:
 	ret
@@ -771,5 +772,49 @@ printpos:
 	int DOS_INT
 	
 	ret
+
+; Generates food at random intervals
+foodmaker:
+
+	mov cx, nextFoodCounter
+	dec nextFoodCounter
+	cmp cx, 0
+	jne nofood
+
+	random
+
+	checkoverlimit:
+	cmp ax, VGA_PIXEL_COUNT
+	jge nooverlimit
+	sub ax, VGA_PIXEL_COUNT
+
+	nooverlimit:
+
+	mov di, ax
+
+	mov bl, es:[di]
+
+	cmp bl, snakeColor
+	jne notsnake
+	inc ax
+	jmp checkoverlimit
+
+	notsnake:
+	cmp bl, foodColor
+	jne notfood
+	inc ax
+	jmp checkoverlimit
+	notfood:
+
+	mov bl, foodColor
+
+	mov es:[di], bl
+
+	and ax, NEXT_FOOD_MAX_MASK
+	mov nextFoodCounter, ax
+
+	nofood:
+	ret
+	
 	
 end main
