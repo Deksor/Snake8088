@@ -90,6 +90,7 @@ numbuf  				db  5 DUP(0),"$"
 videoMode				db ?
 VGA_MODE				equ 0
 PLANTRONICS_MODE		equ 1
+TANDY_MODE				equ 2
 
 VGA_GRAPHIC_MODE 		equ 0013h
 VGA_ADDRESS	  			equ 0A000h
